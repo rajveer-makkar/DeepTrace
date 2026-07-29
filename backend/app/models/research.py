@@ -2,7 +2,6 @@ import uuid
 from datetime import datetime
 from sqlalchemy import String, Float, Integer, Text, ForeignKey, Enum, JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
 import enum
 
 
@@ -90,7 +89,7 @@ class Chunk(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: f"ch_{uuid.uuid4().hex[:8]}")
     document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"))
     content: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[list[float] | None] = mapped_column(ARRAY(Float), nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
 
     document = relationship("Document", back_populates="chunks")
 

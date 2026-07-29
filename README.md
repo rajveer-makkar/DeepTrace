@@ -2,42 +2,39 @@
 
 A deep research engine that runs end-to-end research pipelines using LLMs, web search, and document analysis.
 
+## Quickstart
+
+```sh
+docker run -p 3000:3000 -v deeptrace-data:/data ghcr.io/rajveer-makkar/DeepTrace
+```
+
+Open `http://localhost:3000` and configure API keys at `/settings`.
+
+## Single-Command Production
+
+```sh
+docker compose up -d
+```
+
+Starts Postgres, Redis, backend, and frontend.
+
 ## Stack
 
 - **Frontend** — Next.js 16, shadcn/ui, dark glassmorphism theme
-- **Backend** — Python FastAPI, async SQLAlchemy, PostgreSQL + pgvector
+- **Backend** — Python FastAPI, async SQLAlchemy, PostgreSQL + pgvector (SQLite for quickstart)
 - **Orchestration** — DAG-based research pipeline: plan → search → extract → verify → synthesize
 - **LLM providers** — OpenAI, Anthropic, OpenRouter, OpenCode Zen
 - **Search providers** — Tavily, Brave
 
-## Prerequisites
+## Configuration
 
-- Docker (PostgreSQL + Redis)
-- Python 3.11+
-- Node.js 20+
-
-## Production Deployment
-
-```sh
-docker compose up --build -d
-```
-
-This starts Postgres, Redis, backend (port 8000), and frontend (port 3000).
-
-### Configuration
 1. Copy `.env.example` to `backend/.env` and fill in API keys.
-2. Access the app at `http://localhost:3000`.
-3. Configure providers at `/settings`.
+2. Configure providers at `/settings` in the app.
 
-### Limitations
-- Single backend worker required (in-memory SSE event bus). Scale Redis event bus for multi-worker.
-- Research lost on restart. Add Redis task queue (ARQ/Celery) for persistence.
-- No TLS. Add reverse proxy (nginx/caddy/traefik) for production domains.
-
-## Setup (Development)
+## Development
 
 ```sh
-# Start services
+# Start Postgres + Redis
 docker compose up -d
 
 # Backend
@@ -53,14 +50,11 @@ npm install
 npm run dev
 ```
 
-Configure API keys at `http://localhost:3000/settings`.
+## Limitations
 
-## Usage
-
-1. Open `http://localhost:3000`
-2. Enter a research question and select depth
-3. View progress in real-time via SSE
-4. Access completed report, sources, and evidence graph
+- Single backend worker required (in-memory SSE event bus). Add Redis-backed bus for multi-worker.
+- Research lost on restart. Add Redis task queue (ARQ/Celery) for persistence.
+- No TLS. Add reverse proxy (nginx/caddy/traefik) for production domains.
 
 ## License
 
