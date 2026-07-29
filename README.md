@@ -5,7 +5,7 @@ A deep research engine that runs end-to-end research pipelines using LLMs, web s
 ## Quickstart
 
 ```sh
-docker run -p 3000:3000 -v deeptrace-data:/data ghcr.io/rajveer-makkar/deeptrace:latest
+docker run -p 3000:8000 -v deeptrace-data:/data ghcr.io/rajveer-makkar/deeptrace:latest
 ```
 
 Open `http://localhost:3000` and configure API keys at `/settings`.
