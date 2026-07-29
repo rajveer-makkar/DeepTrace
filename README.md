@@ -46,4 +46,4 @@ Configure API keys at `http://localhost:3000/settings`.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE)
