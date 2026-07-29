@@ -59,3 +59,35 @@ PUT  /api/settings           Update keys/models
 - Pages: `/`, `/research`, `/research/:id`, `/research/:id/report`, `/research/:id/sources`, `/research/:id/graph`, `/history`, `/settings`
 - `NEXT_PUBLIC_API_URL` env var (default `http://localhost:8000`)
 - shadcn/ui components in `components/ui/`
+
+## Deployment Plan
+
+### Current State
+- **Infra**: docker-compose has Postgres + Redis only. No backend/frontend containers. No Dockerfiles. CORS hardcoded to `localhost:3000`.
+- **Backend**: `asyncio.create_task` for research (dies on restart). In-memory event bus (no cross-worker SSE). No production server config.
+- **Frontend**: All "use client" pages, no SSR features. Full SSE streaming. No auth, no error boundaries.
+
+### Target: Deployment-Ready
+
+#### Files to create
+1. `backend/Dockerfile` — Python 3.13-slim, uv for deps, uvicorn, auto-migrate on start
+2. `frontend/Dockerfile` — Node 22, multi-stage build, `next start` on port 3000
+3. `.env.example` — Document all env vars (DB, Redis, CORS, API keys)
+4. `backend/.dockerignore` — Exclude `__pycache__`, `.venv`, `.git`
+5. `frontend/.dockerignore` — Exclude `node_modules`, `.next`, `.git`
+
+#### Files to modify
+6. `docker-compose.yml` — Add backend + frontend services, depends_on, internal network
+7. `backend/app/config.py` — Add `cors_origins` field
+8. `backend/app/main.py` — CORS from `settings.cors_origins.split(",")`
+9. `README.md` — Add "Production Deployment" section
+
+#### Known limitations (documented, not fixed)
+- Single worker required for SSE (in-memory event bus). Scale = Redis-backed event bus.
+- Research lost on restart. Fix = Redis task queue (ARQ/Celery).
+- No TLS. Add reverse proxy (nginx/caddy/traefik) for production domains.
+
+#### Not adding (YAGNI)
+- No gunicorn (uvicorn --workers is fine)
+- No CI/CD (one-command deploy with docker compose)
+- No nginx in docker-compose (add when TLS needed)
