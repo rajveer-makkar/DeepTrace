@@ -5,7 +5,12 @@ RUN npm ci
 COPY frontend/ .
 RUN npm run build
 
-FROM python:3.13-slim AS backend
+FROM python:3.13-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates xz-utils && \
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y nodejs && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uv
 WORKDIR /app
 COPY backend/pyproject.toml .
