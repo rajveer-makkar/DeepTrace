@@ -1,0 +1,10 @@
+.git
+**/.venv
+**/node_modules
+**/.next
+**/__pycache__
+**/*.egg-info
+**/.env
+**/.env.local
+**/tsconfig.tsbuildinfo
+**/.DS_Store

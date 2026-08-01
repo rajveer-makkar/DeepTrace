@@ -11,9 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
-COPY backend/pyproject.toml .
+COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev
 COPY backend/ .
 COPY --from=frontend /app/.next /frontend/.next
@@ -25,5 +25,5 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 EXPOSE 3000
 ENV NODE_ENV=production
-ENV DATABASE_URL=sqlite+aiosqlite:///data/deeptrace.db
+ENV DATABASE_URL=sqlite+aiosqlite:////data/deeptrace.db
 CMD ["/entrypoint.sh"]
