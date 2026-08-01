@@ -1,52 +1,37 @@
-# =========================
-# Frontend build
-# =========================
-FROM node:22-slim AS frontend
+name: Docker
 
-WORKDIR /app
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
 
-COPY frontend/package.json frontend/package-lock.json ./
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/${{ github.repository }}
 
-RUN npm ci
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
-COPY frontend/ .
+    steps:
+      - uses: actions/checkout@v4
 
-RUN npm run build
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
+      - uses: docker/setup-buildx-action@v3
 
-# =========================
-# Backend / Production
-# =========================
-FROM python:3.13-slim
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    xz-utils \
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install uv into PATH
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-WORKDIR /app
-
-# Install Python dependencies
-COPY backend/pyproject.toml .
-
-RUN uv sync --frozen --no-dev
-
-# Copy backend
-COPY backend/ .
-
-# Copy built Next.js frontend
-COPY --from=frontend /app/.next /frontend/.next
-
-# Copy frontend static/public assets if present
-COPY --from=frontend /app/public /frontend/public
-
-EXPOSE 8000
-
-CMD ["uv", "run", "python", "main.py"]
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE }}:${{ github.ref_name == 'main' && 'latest' || github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
