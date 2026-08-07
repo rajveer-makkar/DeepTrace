@@ -1,14 +1,59 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { getSettings, updateSettings } from "@/lib/api"
+import { Check, KeyRound, Loader2, Search, ServerCog, ShieldCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
+import { getSettings, updateSettings } from "@/lib/api"
+import { cn } from "@/lib/utils"
+
+const LLM_PROVIDERS = [
+  { value: "openai", label: "OpenAI", keyField: "openai_api_key", saved: "openai" },
+  { value: "openrouter", label: "OpenRouter", keyField: "openrouter_api_key", saved: "openrouter" },
+  { value: "anthropic", label: "Anthropic", keyField: "anthropic_api_key", saved: "anthropic" },
+  { value: "opencode", label: "OpenCode Zen", keyField: "opencode_api_key", saved: "opencode" },
+]
+
+const SEARCH_PROVIDERS = [
+  { value: "tavily", label: "Tavily", keyField: "tavily_api_key", saved: "tavily", placeholder: "tvly-..." },
+  { value: "brave", label: "Brave", keyField: "brave_api_key", saved: "brave", placeholder: "BSA-..." },
+]
+
+const LLM_PLACEHOLDER: Record<string, string> = {
+  openai: "sk-...",
+  openrouter: "sk-or-...",
+  anthropic: "sk-ant-...",
+  opencode: "oc-...",
+}
+
+interface SettingsState {
+  llm_provider: string
+  llm_model: string
+  search_provider: string
+  openai_api_key: string
+  openrouter_api_key: string
+  anthropic_api_key: string
+  opencode_api_key: string
+  tavily_api_key: string
+  brave_api_key: string
+}
+
+interface HasKeys {
+  openai: boolean
+  openrouter: boolean
+  anthropic: boolean
+  opencode: boolean
+  tavily: boolean
+  brave: boolean
+}
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState<SettingsState>({
     llm_provider: "openai",
-    llm_model: "gpt-4o",
+    llm_model: "",
     search_provider: "tavily",
     openai_api_key: "",
     openrouter_api_key: "",
@@ -17,7 +62,7 @@ export default function SettingsPage() {
     tavily_api_key: "",
     brave_api_key: "",
   })
-  const [hasKeys, setHasKeys] = useState({
+  const [hasKeys, setHasKeys] = useState<HasKeys>({
     openai: false,
     openrouter: false,
     anthropic: false,
@@ -25,6 +70,7 @@ export default function SettingsPage() {
     tavily: false,
     brave: false,
   })
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState("")
@@ -47,7 +93,8 @@ export default function SettingsPage() {
           brave: s.has_brave_key,
         })
       })
-      .catch(() => setError("Could not reach backend. Is the server running?"))
+      .catch(() => setError("Could not reach the backend. Is the server running?"))
+      .finally(() => setLoading(false))
   }, [])
 
   async function handleSave(e: React.FormEvent) {
@@ -75,175 +122,247 @@ export default function SettingsPage() {
     }
   }
 
+  const set = (patch: Partial<SettingsState>) => setSettings((prev) => ({ ...prev, ...patch }))
+
+  const llmReady = hasKeys.openai || hasKeys.openrouter || hasKeys.anthropic || hasKeys.opencode
+  const searchReady = hasKeys.tavily || hasKeys.brave
+  const ready = llmReady && searchReady
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-5 px-6 py-10">
+        <Skeleton className="h-9 w-40" />
+        <Skeleton className="h-40 rounded-xl" />
+        <Skeleton className="h-56 rounded-xl" />
+      </div>
+    )
+  }
+
   return (
-    <div className="max-w-3xl mx-auto px-6 py-12">
-      <h1 className="text-3xl font-bold mb-8 tracking-tight">Settings</h1>
+    <div className="mx-auto max-w-3xl px-6 py-10">
+      <div className="mb-6">
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Settings</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Configure providers and API keys. Keys are stored securely and never displayed.
+        </p>
+      </div>
 
       {error && (
-        <div className="glass-sm bg-destructive/10 border-destructive/30 px-5 py-4 text-sm text-destructive font-medium mb-6">
+        <div className="mb-6 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm font-medium text-destructive">
           {error}
         </div>
       )}
 
-      <div className="glass bg-card p-6 mb-8 text-sm space-y-3">
-        <p className="font-bold text-base mb-2">Provider Status</p>
-        <p className={hasKeys.openai || hasKeys.openrouter || hasKeys.anthropic || hasKeys.opencode ? "text-green-700 dark:text-green-400" : "text-muted-foreground"}>
-          LLM keys: {hasKeys.openai ? "✓ OpenAI" : ""}{hasKeys.openrouter ? " ✓ OpenRouter" : ""}{hasKeys.anthropic ? " ✓ Anthropic" : ""}{hasKeys.opencode ? " ✓ OpenCode" : ""}
-          {!hasKeys.openai && !hasKeys.openrouter && !hasKeys.anthropic && !hasKeys.opencode ? "✗ None" : ""}
-        </p>
-        <p className={hasKeys.tavily || hasKeys.brave ? "text-green-700 dark:text-green-400" : "text-muted-foreground"}>
-          Search keys: {hasKeys.tavily ? "✓ Tavily" : ""}{hasKeys.brave ? " ✓ Brave" : ""}
-          {!hasKeys.tavily && !hasKeys.brave ? "✗ None" : ""}
-        </p>
-        {settings.llm_provider === "openai" && !hasKeys.openai && hasKeys.openrouter && (
-          <p className="text-amber-600 text-sm">OpenAI selected but no key — will use OpenRouter instead</p>
-        )}
-        {settings.llm_provider === "opencode" && !hasKeys.opencode && hasKeys.openai && (
-          <p className="text-amber-600 text-sm">OpenCode selected but no key — will use OpenAI instead</p>
-        )}
-        {settings.search_provider === "brave" && !hasKeys.brave && hasKeys.tavily && (
-          <p className="text-amber-600 text-sm">Brave selected but no key — will use Tavily instead</p>
-        )}
-        {settings.search_provider === "tavily" && !hasKeys.tavily && hasKeys.brave && (
-          <p className="text-amber-600 text-sm">Tavily selected but no key — will use Brave instead</p>
-        )}
-        {(hasKeys.openai || hasKeys.openrouter || hasKeys.anthropic || hasKeys.opencode) && (hasKeys.tavily || hasKeys.brave) ? (
-          <p className="text-green-700 dark:text-green-400 text-sm font-medium pt-2">Ready to research</p>
-        ) : (
-          <p className="text-destructive text-sm font-medium pt-2">Set at least one LLM key and one search key</p>
-        )}
-      </div>
-
-      <form onSubmit={handleSave} className="space-y-8">
-        <div className="glass bg-card p-8 space-y-6">
-          <h2 className="text-xl font-bold">LLM Provider</h2>
-          <div>
-            <label className="block text-base font-medium mb-2">Provider</label>
-            <select
-              value={settings.llm_provider}
-              onChange={(e) => setSettings((s) => ({ ...s, llm_provider: e.target.value }))}
-              className="glass-inset w-full bg-background px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-ring/50"
-            >
-              <option value="openai">OpenAI</option>
-              <option value="openrouter">OpenRouter</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="opencode">OpenCode Zen</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-base font-medium mb-2">Model</label>
-            <input
-              type="text"
-              value={settings.llm_model}
-              onChange={(e) => setSettings((s) => ({ ...s, llm_model: e.target.value }))}
-              placeholder="gpt-4o"
-              className="glass-inset w-full bg-background px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-ring/50"
-            />
+      <form onSubmit={handleSave} className="space-y-6">
+        <div className="space-y-6 glass rounded-2xl p-6">
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
+              <ShieldCheck className="size-4" />
+            </span>
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Readiness</h2>
+              <p className="text-xs text-muted-foreground">Confirm you can run a research session</p>
+            </div>
           </div>
 
-          <fieldset className="space-y-4 pt-2">
-            <legend className="text-base font-medium mb-2">API Keys</legend>
-            <div>
-              <label className="block text-sm text-muted-foreground mb-2">
-                OpenAI {hasKeys.openai && "(saved)"}
-              </label>
-              <input
-                type="password"
-                value={settings.openai_api_key}
-                onChange={(e) => setSettings((s) => ({ ...s, openai_api_key: e.target.value }))}
-                placeholder={hasKeys.openai ? "sk-••••••••" : "sk-..."}
-                className="glass-inset w-full bg-background px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-ring/50"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-muted-foreground mb-2">
-                OpenRouter {hasKeys.openrouter && "(saved)"}
-              </label>
-              <input
-                type="password"
-                value={settings.openrouter_api_key}
-                onChange={(e) => setSettings((s) => ({ ...s, openrouter_api_key: e.target.value }))}
-                placeholder={hasKeys.openrouter ? "sk-or-••••" : "sk-or-..."}
-                className="glass-inset w-full bg-background px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-ring/50"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-muted-foreground mb-2">
-                Anthropic {hasKeys.anthropic && "(saved)"}
-              </label>
-              <input
-                type="password"
-                value={settings.anthropic_api_key}
-                onChange={(e) => setSettings((s) => ({ ...s, anthropic_api_key: e.target.value }))}
-                placeholder={hasKeys.anthropic ? "sk-ant-••••" : "sk-ant-..."}
-                className="glass-inset w-full bg-background px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-ring/50"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-muted-foreground mb-2">
-                OpenCode Zen {hasKeys.opencode && "(saved)"}
-              </label>
-              <input
-                type="password"
-                value={settings.opencode_api_key}
-                onChange={(e) => setSettings((s) => ({ ...s, opencode_api_key: e.target.value }))}
-                placeholder={hasKeys.opencode ? "oc-••••" : "oc-..."}
-                className="glass-inset w-full bg-background px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-ring/50"
-              />
-            </div>
-          </fieldset>
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            <StatusCard title="LLM provider" ready={llmReady}>
+              {LLM_PROVIDERS.filter((p) => hasKeys[p.saved as keyof HasKeys]).map((p) => (
+                <span key={p.value}>• {p.label}</span>
+              ))}
+              {!llmReady && "No keys configured"}
+            </StatusCard>
+            <StatusCard title="Search provider" ready={searchReady}>
+              {SEARCH_PROVIDERS.filter((p) => hasKeys[p.saved as keyof HasKeys]).map((p) => (
+                <span key={p.value}>• {p.label}</span>
+              ))}
+              {!searchReady && "No keys configured"}
+            </StatusCard>
+          </div>
+
+          <div
+            className={cn(
+              "flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium ring-1",
+              ready
+                ? "bg-success/10 text-success ring-success/20"
+                : "bg-warning/10 text-warning ring-warning/20"
+            )}
+          >
+            {ready ? (
+              <>
+                <Check className="size-4" /> Ready to research
+              </>
+            ) : (
+              <>
+                <ShieldCheck className="size-4" /> Configure at least one LLM and one search key
+              </>
+            )}
+          </div>
         </div>
 
-        <div className="glass bg-card p-8 space-y-6">
-          <h2 className="text-xl font-bold">Search Provider</h2>
-          <div>
-            <label className="block text-base font-medium mb-2">Provider</label>
-            <select
-              value={settings.search_provider}
-              onChange={(e) => setSettings((s) => ({ ...s, search_provider: e.target.value }))}
-              className="glass-inset w-full bg-background px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-ring/50"
-            >
-              <option value="tavily">Tavily</option>
-              <option value="brave">Brave</option>
-            </select>
+        {/* LLM section */}
+        <div className="space-y-5 glass rounded-2xl p-6">
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
+              <ServerCog className="size-4" />
+            </span>
+            <h2 className="text-base font-semibold text-foreground">LLM provider</h2>
           </div>
 
-          <fieldset className="space-y-4 pt-2">
-            <legend className="text-base font-medium mb-2">API Keys</legend>
-            <div>
-              <label className="block text-sm text-muted-foreground mb-2">
-                Tavily {hasKeys.tavily && "(saved)"}
-              </label>
-              <input
-                type="password"
-                value={settings.tavily_api_key}
-                onChange={(e) => setSettings((s) => ({ ...s, tavily_api_key: e.target.value }))}
-                placeholder={hasKeys.tavily ? "tvly-••••" : "tvly-..."}
-                className="glass-inset w-full bg-background px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-ring/50"
-              />
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="llm-provider">Provider</Label>
+                <Select
+                  value={settings.llm_provider}
+                  onValueChange={(v) => set({ llm_provider: String(v) })}
+                >                  <SelectTrigger id="llm-provider">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LLM_PROVIDERS.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="llm-model">Model</Label>
+                <Input
+                  id="llm-model"
+                  value={settings.llm_model}
+                  onChange={(e) => set({ llm_model: e.target.value })}
+                  placeholder="gpt-4o"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm text-muted-foreground mb-2">
-                Brave {hasKeys.brave && "(saved)"}
-              </label>
-              <input
-                type="password"
-                value={settings.brave_api_key}
-                onChange={(e) => setSettings((s) => ({ ...s, brave_api_key: e.target.value }))}
-                placeholder={hasKeys.brave ? "BSA-••••" : "BSA-..."}
-                className="glass-inset w-full bg-background px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-ring/50"
-              />
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {LLM_PROVIDERS.map((p) => (
+                <KeyField
+                  key={p.value}
+                  label={p.label}
+                  value={settings[p.keyField as keyof SettingsState] as string}
+                  onChange={(v) => set({ [p.keyField]: v } as Partial<SettingsState>)}
+                  saved={hasKeys[p.saved as keyof HasKeys]}
+                  placeholder={LLM_PLACEHOLDER[p.keyField] ?? "..."}
+                />
+              ))}
             </div>
-          </fieldset>
+          </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <Button type="submit" disabled={saving} className="glass px-8 py-3 text-base font-semibold bg-primary text-primary-foreground">
-            {saving ? "Saving..." : "Save Settings"}
+        {/* Search section */}
+        <div className="space-y-5 glass rounded-2xl p-6">
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
+              <Search className="size-4" />
+            </span>
+            <h2 className="text-base font-semibold text-foreground">Search provider</h2>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="search-provider">Provider</Label>
+              <Select
+                value={settings.search_provider}
+                onValueChange={(v) => set({ search_provider: String(v) })}
+              >
+                <SelectTrigger id="search-provider">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SEARCH_PROVIDERS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="hidden sm:block" />
+            {SEARCH_PROVIDERS.map((p) => (
+              <KeyField
+                key={p.value}
+                label={p.label}
+                value={settings[p.keyField as keyof SettingsState]}
+                onChange={(v) => set({ [p.keyField]: v } as Partial<SettingsState>)}
+                saved={hasKeys[p.saved as keyof HasKeys]}
+                placeholder={p.placeholder}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button type="submit" disabled={saving} className="rounded-full px-6">
+            {saving ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
+            {saving ? "Saving…" : "Save settings"}
           </Button>
-          {saved && <span className="text-base text-green-600 font-medium">Saved</span>}
+          {saved && (
+            <span className="flex items-center gap-1.5 text-sm font-medium text-success">
+              <Check className="size-4" /> Saved
+            </span>
+          )}
         </div>
       </form>
+    </div>
+  )
+}
+
+function StatusCard({
+  title,
+  ready,
+  children,
+}: {
+  title: string
+  ready: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4">
+      <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-foreground">
+        <span className={cn("size-1.5 rounded-full", ready ? "bg-success" : "bg-warning")} />
+        {title}
+      </p>
+      <p className={cn("text-xs leading-relaxed", ready ? "text-muted-foreground" : "text-warning")}>
+        {children}
+      </p>
+    </div>
+  )
+}
+
+function KeyField({
+  label,
+  value,
+  onChange,
+  saved,
+  placeholder,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  saved: boolean
+  placeholder: string
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <Label>{label}</Label>
+        {saved && (
+          <span className="flex items-center gap-1 text-[11px] font-medium text-success">
+            <Check className="size-3" /> Saved
+          </span>
+        )}
+      </div>
+      <Input
+        type="password"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={saved ? "••••••••" : placeholder}
+      />
     </div>
   )
 }

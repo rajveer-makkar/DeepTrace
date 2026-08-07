@@ -54,6 +54,7 @@ async def get_research(research_id: str, db: AsyncSession = Depends(get_db)):
         "id": session.id,
         "question": session.question,
         "status": session.status.value,
+        "depth": session.depth,
         "created_at": session.created_at.isoformat(),
     }
 

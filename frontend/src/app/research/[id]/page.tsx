@@ -1,11 +1,13 @@
 "use client"
 
 import { use, useEffect, useState } from "react"
-import Link from "next/link"
-import { getResearch, getTasks, getSources } from "@/lib/api"
-import { ResearchStream } from "@/components/ResearchStream"
-import { Badge } from "@/components/ui/badge"
-import type { ResearchTask, Source } from "@/types"
+import { Activity } from "lucide-react"
+import { ResearchDashboard } from "@/components/ResearchDashboard"
+import { LiveResearchContext } from "@/components/LiveResearchContext"
+import { ContextPanel } from "@/components/ContextPanel"
+import { ResearchTabs } from "@/components/ResearchTabs"
+import { getResearch } from "@/lib/api"
+import { Skeleton } from "@/components/ui/skeleton"
 
 export default function ResearchWorkspace({
   params,
@@ -13,89 +15,46 @@ export default function ResearchWorkspace({
   params: Promise<{ id: string }>
 }) {
   const { id } = use(params)
-  const [research, setResearch] = useState<{ question: string; status: string } | null>(null)
-  const [tasks, setTasks] = useState<ResearchTask[]>([])
-  const [sources, setSources] = useState<Source[]>([])
+  const [research, setResearch] = useState<{ question: string; status: string; depth?: string } | null>(null)
 
   useEffect(() => {
-    getResearch(id).then(setResearch)
-    getTasks(id).then(setTasks)
-    getSources(id).then(setSources)
+    getResearch(id).then(setResearch).catch(() => setResearch(null))
   }, [id])
 
-  if (!research) return (
-    <div className="flex items-center justify-center flex-1">
-      <div className="glass bg-card p-8 text-lg text-muted-foreground">Loading...</div>
-    </div>
-  )
+  if (!research) {
+    return (
+      <div className="mx-auto max-w-4xl space-y-6 px-6 py-10">
+        <Skeleton className="h-9 w-2/3" />
+        <Skeleton className="h-4 w-1/2" />
+        <div className="grid gap-5 pt-4 lg:grid-cols-[1fr_320px]">
+          <div className="space-y-5">
+            <Skeleton className="h-40 rounded-xl" />
+            <Skeleton className="h-64 rounded-xl" />
+          </div>
+          <Skeleton className="h-80 rounded-xl" />
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8">
-      <div className="glass-lg bg-card p-6 mb-8">
-        <div className="flex items-center justify-between">
-          <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-bold mb-1 truncate">{research.question}</h1>
-            <p className="text-sm text-muted-foreground">ID: {id}</p>
+    <div className="flex h-full">
+      <div className="min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-4xl px-6 py-8">
+          <div className="mb-6">
+            <ResearchTabs id={id} active="live" />
           </div>
-          <Badge variant={research.status === "completed" ? "default" : "secondary"} className="glass-sm px-3 py-1 text-sm">
-            {research.status}
-          </Badge>
+
+          <ResearchDashboard researchId={id} question={research.question} depth={research.depth} />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <div className="glass bg-card p-5 lg:col-span-1">
-          <h2 className="font-bold text-base mb-4">Plan</h2>
-          {tasks.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Planning in progress...</p>
-          ) : (
-            <ul className="space-y-3">
-              {tasks.map((t) => (
-                <li key={t.id} className="flex items-start gap-3 text-sm">
-                  <span className="mt-0.5 shrink-0 text-base">
-                    {t.status === "completed" ? "✓" : t.status === "in_progress" ? "◉" : "○"}
-                  </span>
-                  <span className={t.status === "completed" ? "text-muted-foreground/60 line-through" : ""}>
-                    {t.question}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="lg:col-span-2 space-y-6">
-          <ResearchStream researchId={id} />
-        </div>
-
-        <div className="glass bg-card p-5 lg:col-span-1">
-          <h2 className="font-bold text-base mb-4">Sources ({sources.length})</h2>
-          {sources.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No sources yet.</p>
-          ) : (
-            <ul className="space-y-2">
-              {sources.slice(0, 8).map((s) => (
-                <li key={s.id} className="text-sm truncate">
-                  <a href={s.url} target="_blank" rel="noopener noreferrer" className="hover:underline text-foreground hover:text-primary transition-colors">
-                    {s.title || s.domain || s.url}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="pt-5 space-y-3 border-t border-border mt-5">
-            <Link href={`/research/${id}/report`} className="glass-sm flex items-center justify-center px-4 py-3 text-sm font-medium text-foreground hover:text-primary transition-colors">
-              Report
-            </Link>
-            <Link href={`/research/${id}/sources`} className="glass-sm flex items-center justify-center px-4 py-3 text-sm font-medium text-foreground hover:text-primary transition-colors">
-              Sources
-            </Link>
-            <Link href={`/research/${id}/graph`} className="glass-sm flex items-center justify-center px-4 py-3 text-sm font-medium text-foreground hover:text-primary transition-colors">
-              Graph
-            </Link>
-          </div>
-        </div>
-      </div>
+      <ContextPanel
+        title="Research"
+        icon={<Activity className="size-4 text-primary" />}
+      >
+        <LiveResearchContext researchId={id} />
+      </ContextPanel>
     </div>
   )
 }

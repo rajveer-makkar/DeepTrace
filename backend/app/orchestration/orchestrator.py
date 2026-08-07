@@ -20,6 +20,80 @@ from app.orchestration.agents.synthesizer import Synthesizer
 
 logger = logging.getLogger(__name__)
 
+MAX_CONCURRENT_TASKS = 5
+MAX_GAPS_PER_ITERATION = 2
+
+
+async def _execute_task(
+    session_id: str,
+    task: ResearchTask,
+    search_agent: SearchAgent,
+    evidence_analyzer: EvidenceAnalyzer,
+    claim_gen: ClaimGenerator,
+    verifier: ClaimVerifier,
+    doc_service: DocumentService,
+    fetched_urls: set[str],
+) -> dict:
+    """Runs all async I/O for one task. No DB writes here — the caller persists
+    results sequentially on the shared session."""
+    await events.emit(session_id, "search.started", {"task": task.question})
+    raw_results = await search_agent.execute(task, num_results=5)
+    await events.emit(session_id, "search.completed", {"task": task.question, "results": len(raw_results)})
+
+    results_slice = raw_results[:2]
+
+    async def fetch_one(r: dict) -> tuple[str, str | None]:
+        url = r["url"]
+        if url in fetched_urls:
+            return url, None
+        await events.emit(session_id, "document.fetching", {"url": url})
+        content = await doc_service.fetch(url)
+        fetched_urls.add(url)
+        return url, content
+
+    fetched = await asyncio.gather(*[fetch_one(r) for r in results_slice])
+    contents = {url: content for url, content in fetched if content}
+
+    await events.emit(session_id, "evidence.extracting", {"task": task.question})
+    chunk_text = "\n\n".join(
+        f"Source: {r['url']}\n{contents.get(r['url']) or r['snippet']}"
+        for r in results_slice
+    )
+    evidence_items = await evidence_analyzer.extract(task.question, chunk_text, "")
+    for e in evidence_items:
+        e["source_url"] = e.get("source_url") or (results_slice[0]["url"] if results_slice else "")
+
+    await events.emit(session_id, "claim.generating", {"task": task.question})
+    claims = await claim_gen.generate(task.question, evidence_items)
+
+    statements = [c.get("statement", c.get("claim", "")) for c in claims]
+    verified = await verifier.verify_batch(statements, evidence_items)
+    by_index = {int(v.get("index", i)): v for i, v in enumerate(verified)}
+
+    claim_rows = []
+    for i, c in enumerate(claims):
+        statement = c.get("statement", c.get("claim", ""))
+        if not statement:
+            continue
+        v = by_index.get(i, {})
+        claim_rows.append({
+            "statement": statement,
+            "confidence": v.get("confidence", c.get("confidence")),
+            "status": v.get("status", "insufficient"),
+        })
+
+    source_rows = [
+        {
+            "url": r["url"],
+            "title": r.get("title"),
+            "domain": r.get("domain"),
+            "status": "fetched" if contents.get(r["url"]) else "pending",
+        }
+        for r in results_slice
+    ]
+
+    return {"sources": source_rows, "claims": claim_rows}
+
 
 async def run_research(session_id: str, session_maker: async_sessionmaker[AsyncSession]):
     async with session_maker() as db:
@@ -36,6 +110,7 @@ async def run_research(session_id: str, session_maker: async_sessionmaker[AsyncS
 
             providers = build_providers(settings)
             llm = providers["llm"]
+            fast_llm = providers["fast_llm"]
             search_provider = providers["search"]
             embedding = providers["embedding"]
 
@@ -45,10 +120,10 @@ async def run_research(session_id: str, session_maker: async_sessionmaker[AsyncS
             task_mgr = TaskManager(db, session_id)
 
             planner = PlannerAgent(llm)
-            search_agent = SearchAgent(llm, search_mgr)
-            evidence_analyzer = EvidenceAnalyzer(llm)
-            claim_gen = ClaimGenerator(llm)
-            verifier = ClaimVerifier(llm)
+            search_agent = SearchAgent(fast_llm, search_mgr)
+            evidence_analyzer = EvidenceAnalyzer(fast_llm)
+            claim_gen = ClaimGenerator(fast_llm)
+            verifier = ClaimVerifier(fast_llm)
             gap_detector = GapDetector(llm)
             synthesizer = Synthesizer(llm)
 
@@ -63,8 +138,10 @@ async def run_research(session_id: str, session_maker: async_sessionmaker[AsyncS
             tasks = await task_mgr.create_from_plan(plan)
 
             # Phase 3: Execute tasks with iteration
-            all_claims_data: list[dict] = []
+            all_claim_statements: list[str] = []
             all_sources_data: list[dict] = []
+            fetched_urls: set[str] = set()
+            semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
             max_iterations = {"quick": 1, "standard": 2, "deep": 3}
             max_iter = max_iterations.get(research.depth, 2)
 
@@ -75,74 +152,58 @@ async def run_research(session_id: str, session_maker: async_sessionmaker[AsyncS
 
                 await events.emit(session_id, "iteration.started", {"iteration": iteration + 1, "tasks": len(ready)})
 
-                for task in ready:
-                    await task_mgr.mark_in_progress(task)
-                    await events.emit(session_id, "search.started", {"task": task.question})
+                async def run_one(t: ResearchTask):
+                    async with semaphore:
+                        return await _execute_task(
+                            session_id, t, search_agent, evidence_analyzer, claim_gen,
+                            verifier, doc_service, fetched_urls,
+                        )
 
-                    raw_results = await search_agent.execute(task, num_results=5)
-                    for r in raw_results:
+                results = await asyncio.gather(
+                    *[run_one(t) for t in ready], return_exceptions=True
+                )
+
+                # Sequential persistence on the shared session
+                for task, result in zip(ready, results):
+                    if isinstance(result, BaseException):
+                        logger.warning("task %s failed: %s", task.id, result)
+                        await task_mgr.mark_failed(task)
+                        continue
+
+                    for r in result["sources"]:
                         source = Source(
                             session_id=session_id,
                             url=r["url"],
                             title=r.get("title"),
                             domain=r.get("domain"),
-                            status="pending",
+                            status=r.get("status", "pending"),
                         )
                         db.add(source)
                         await db.flush()
                         all_sources_data.append({"id": source.id, "url": source.url, "title": source.title})
-
                     await db.commit()
-                    await events.emit(session_id, "search.completed", {"task": task.question, "results": len(raw_results)})
 
-                    results_slice = raw_results[:2]
-                    for r in results_slice:
-                        await events.emit(session_id, "document.fetching", {"url": r["url"]})
-                        content = await doc_service.fetch(r["url"])
-                        if content:
-                            source_result = await db.execute(
-                                select(Source).where(Source.url == r["url"], Source.session_id == session_id)
-                            )
-                            source = source_result.scalar_one_or_none()
-                            if source:
-                                source.status = "fetched"
-                                await db.commit()
-
-                    await events.emit(session_id, "evidence.extracting", {"task": task.question})
-                    chunk_text = "\n\n".join(
-                        f"Source: {r['url']}\n{r['snippet']}"
-                        for r in results_slice
-                    )
-                    evidence_items = await evidence_analyzer.extract(task.question, chunk_text, "")
-                    all_claims_data.extend([{"passage": e["passage"], "source_url": e["source_url"]} for e in evidence_items])
-
-                    await events.emit(session_id, "claim.generating", {"task": task.question})
-                    claims = await claim_gen.generate(task.question, evidence_items)
-                    for c in claims:
+                    for c in result["claims"]:
                         claim_obj = Claim(
                             session_id=session_id,
-                            claim=c.get("statement", c.get("claim", "")),
+                            claim=c["statement"],
                             confidence=c.get("confidence"),
-                            status="unverified",
+                            status=c.get("status", "unverified"),
                         )
                         db.add(claim_obj)
                         await db.flush()
-
-                        verified = await verifier.verify(claim_obj.claim, evidence_items)
-                        claim_obj.status = verified.get("status", "insufficient")
-                        claim_obj.confidence = verified.get("confidence", claim_obj.confidence)
-
+                        all_claim_statements.append(c["statement"])
                     await db.commit()
+
                     await task_mgr.mark_completed(task)
 
                 # Phase 4: Gap detection
                 await events.emit(session_id, "gap.detecting", {"iteration": iteration + 1})
-                claim_statements = [c.get("statement", c.get("claim", "")) for c in all_claims_data[:10]]
-                gaps = await gap_detector.detect(research.question, claim_statements, iteration)
+                gaps = await gap_detector.detect(research.question, all_claim_statements, iteration)
 
                 if gaps:
                     await events.emit(session_id, "gap.found", {"gaps": len(gaps)})
-                    await task_mgr.create_from_gaps(gaps)
+                    await task_mgr.create_from_gaps(gaps[:MAX_GAPS_PER_ITERATION])
                 else:
                     await events.emit(session_id, "gap.none")
                     break

@@ -1,67 +1,45 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { createResearch } from "@/lib/api"
+import { motion } from "framer-motion"
+import { ArrowRight } from "lucide-react"
+import { ResearchForm, RESEARCH_PROMPTS, fillPrompt } from "@/components/ResearchForm"
 
 export default function NewResearch() {
-  const [question, setQuestion] = useState("")
-  const [depth, setDepth] = useState<string>("standard")
-  const [loading, setLoading] = useState(false)
-  const router = useRouter()
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!question.trim()) return
-    setLoading(true)
-    try {
-      const { id } = await createResearch(question, depth)
-      router.push(`/research/${id}`)
-    } catch {
-      setLoading(false)
-    }
-  }
-
   return (
-    <div className="max-w-3xl mx-auto px-6 py-12">
-      <div className="glass-lg bg-card p-10">
-        <h1 className="text-3xl font-bold mb-8 tracking-tight">New Research</h1>
-        <form onSubmit={handleSubmit} className="space-y-8">
-          <div>
-            <label className="block text-base font-medium mb-3">Question</label>
-            <textarea
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder="e.g. Is nuclear energy actually better for the climate than solar?"
-              rows={5}
-              className="glass-inset w-full bg-background px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-ring/50 resize-none"
-            />
+    <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col justify-center px-6 py-16">
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2 }}
+      >
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+          Start a deep research
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Ask a question and let the researcher dig into the web for you.
+        </p>
+        <div className="mt-8">
+          <ResearchForm autoFocus />
+        </div>
+
+        <div className="mt-10">
+          <p className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Try an example
+          </p>
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            {RESEARCH_PROMPTS.map((p) => (
+              <button
+                key={p.label}
+                onClick={() => fillPrompt(p.prompt)}
+                className="group flex items-center gap-3 glass rounded-xl px-4 py-3.5 text-left transition-all hover:border-primary/40 hover:bg-white/[0.06]"
+              >
+                <span className="text-sm font-medium text-foreground">{p.label}</span>
+                <ArrowRight className="ml-auto size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+              </button>
+            ))}
           </div>
-          <div>
-            <label className="block text-base font-medium mb-3">Depth</label>
-            <div className="flex gap-3">
-              {["quick", "standard", "deep"].map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => setDepth(d)}
-                  className={`glass-sm flex-1 px-6 py-3 text-base font-medium capitalize transition-all ${
-                    depth === d
-                      ? "bg-primary text-primary-foreground"
-                      : "text-foreground hover:text-primary"
-                  }`}
-                >
-                  {d}
-                </button>
-              ))}
-            </div>
-          </div>
-          <Button type="submit" disabled={loading || !question.trim()} size="lg" className="glass w-full py-4 text-base font-semibold bg-primary text-primary-foreground">
-            {loading ? "Starting..." : "Start Research"}
-          </Button>
-        </form>
-      </div>
+        </div>
+      </motion.div>
     </div>
   )
 }

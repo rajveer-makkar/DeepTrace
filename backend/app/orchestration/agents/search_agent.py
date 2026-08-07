@@ -1,3 +1,4 @@
+import asyncio
 import json
 from app.services.llm import LLMProvider
 from app.services.search import SearchManager
@@ -27,9 +28,11 @@ class SearchAgent:
 
     async def execute(self, task: ResearchTask, num_results: int = 8) -> list[dict]:
         queries = await self.generate_queries(task)
+        results_by_query = await asyncio.gather(
+            *[self.search_manager.search(q, num_results) for q in queries]
+        )
         all_results = []
-        for query in queries:
-            results = await self.search_manager.search(query, num_results)
+        for query, results in zip(queries, results_by_query):
             for r in results:
                 all_results.append({"query": query, "url": r.url, "title": r.title, "snippet": r.snippet, "domain": r.domain})
         return all_results[:num_results]

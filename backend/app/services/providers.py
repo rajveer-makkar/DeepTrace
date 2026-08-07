@@ -152,34 +152,64 @@ class EmbeddingService:
         return [d.embedding for d in resp.data]
 
 
+FAST_MODELS: dict[str, str | None] = {
+    "openai": "gpt-4o-mini",
+    "anthropic": "claude-3-5-haiku-20241022",
+    "openrouter": None,
+    "opencode": "deepseek-v4-flash-free",
+}
+
+
+def fast_model_for(provider: str, model: str) -> str:
+    fast = FAST_MODELS.get(provider)
+    if fast:
+        return fast
+    if provider == "openrouter":
+        if "gpt-4o" in model or "gpt-5" in model:
+            return "openai/gpt-4o-mini"
+        if "claude-3" in model:
+            return "anthropic/claude-3-5-haiku"
+    return model
+
+
+def _build_llm(provider: str, api_key: str, model: str) -> LLMProvider:
+    if provider == "openai":
+        return OpenAILLM(api_key, model)
+    if provider == "openrouter":
+        return OpenRouterLLM(api_key, model)
+    if provider == "anthropic":
+        return AnthropicLLM(api_key, model)
+    return OpenCodeLLM(api_key, model)
+
+
 def build_providers(settings: UserSettings) -> dict:
     config = settings.config
     llm_provider_name = config.get("llm_provider", "openai")
     llm_model = config.get("llm_model", "gpt-4o")
     search_provider_name = config.get("search_provider", "tavily")
 
-    llm_provider_name = config.get("llm_provider", "openai")
-    llm_model = config.get("llm_model", "gpt-4o")
     if llm_provider_name == "openai" and config.get("openai_api_key"):
-        llm = OpenAILLM(config["openai_api_key"], llm_model)
+        provider, api_key = "openai", config["openai_api_key"]
     elif llm_provider_name == "openrouter" and config.get("openrouter_api_key"):
-        llm = OpenRouterLLM(config["openrouter_api_key"], llm_model)
+        provider, api_key = "openrouter", config["openrouter_api_key"]
     elif llm_provider_name == "anthropic" and config.get("anthropic_api_key"):
-        llm = AnthropicLLM(config["anthropic_api_key"], llm_model)
+        provider, api_key = "anthropic", config["anthropic_api_key"]
     elif llm_provider_name == "opencode" and config.get("opencode_api_key"):
-        llm = OpenCodeLLM(config["opencode_api_key"], llm_model)
+        provider, api_key = "opencode", config["opencode_api_key"]
     elif config.get("opencode_api_key"):
-        llm = OpenCodeLLM(config["opencode_api_key"], llm_model)
+        provider, api_key = "opencode", config["opencode_api_key"]
     elif config.get("openai_api_key"):
-        llm = OpenAILLM(config["openai_api_key"], llm_model)
+        provider, api_key = "openai", config["openai_api_key"]
     elif config.get("openrouter_api_key"):
-        llm = OpenRouterLLM(config["openrouter_api_key"], llm_model)
+        provider, api_key = "openrouter", config["openrouter_api_key"]
     elif config.get("anthropic_api_key"):
-        llm = AnthropicLLM(config["anthropic_api_key"], llm_model)
+        provider, api_key = "anthropic", config["anthropic_api_key"]
     else:
         raise ValueError("No LLM API key configured — set OpenAI, OpenRouter, Anthropic, or OpenCode in Settings")
 
-    search_provider_name = config.get("search_provider", "tavily")
+    llm = _build_llm(provider, api_key, llm_model)
+    fast_llm = _build_llm(provider, api_key, fast_model_for(provider, llm_model))
+
     if search_provider_name == "tavily" and config.get("tavily_api_key"):
         search = TavilySearch(config["tavily_api_key"])
     elif search_provider_name == "brave" and config.get("brave_api_key"):
@@ -194,4 +224,4 @@ def build_providers(settings: UserSettings) -> dict:
     embedding_api_key = config.get("openai_api_key") or config.get("openrouter_api_key") or config.get("opencode_api_key") or ""
     embedding = EmbeddingService(embedding_api_key) if embedding_api_key else None
 
-    return {"llm": llm, "search": search, "embedding": embedding}
+    return {"llm": llm, "fast_llm": fast_llm, "search": search, "embedding": embedding}
